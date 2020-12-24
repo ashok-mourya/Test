@@ -1,0 +1,243 @@
+variables:
+- group: Ashok_token  
+trigger: none
+stages:
+- stage: Sandbox_Validate
+  jobs:
+  - job: TerraformInit
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - checkout: self
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: 0.13.5
+    - script: |
+        sed -i 's/TOKEN/$(TOKEN)/' main.tf
+        cp backend/sandbox sandbox.tf
+
+    - task: TerraformTaskV1@0
+      displayName: "Sandbox init"
+      inputs:
+        provider: 'aws'
+        command: 'init'
+        backendServiceAWS: 'Centricity Sandbox Terraform service connection'
+        backendAWSBucketName: 'terraform-state-bucket-centricity-sandbox'
+        backendAWSKey: 'us-east-1/terraform.tfstate'
+    - task: TerraformTaskV1@0
+      displayName: "Terraform Plan"
+      inputs:
+        provider: 'aws'
+        command: 'plan'
+        commandOptions: '-var-file vars/terraform.sandbox.tfvars -out=tfplan'
+        environmentServiceNameAWS: 'Centricity Sandbox Terraform service connection'
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: 'tfplan'
+        artifactName: tfplan
+
+- stage: Sandbox_Apply
+  jobs:
+  - deployment: SandboxApply
+    displayName: SandboxApply
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    environment: Sandbox
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - task: TerraformInstaller@0
+            inputs:
+              terraformVersion: 0.13.5
+          - script: |
+              sed -i 's/TOKEN/$(TOKEN)/' main.tf
+              cp backend/sandbox sandbox.tf
+
+          - task: DownloadBuildArtifacts@0
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'tfplan'
+              downloadPath: '.'
+          - task: TerraformTaskV1@0
+            displayName: "Sandbox init"
+            inputs:
+              provider: 'aws'
+              command: 'init'
+              backendServiceAWS: 'Centricity Sandbox Terraform service connection'
+              backendAWSBucketName: 'terraform-state-bucket-centricity-sandbox'
+              backendAWSKey: 'us-east-1/terraform.tfstate'
+          - task: TerraformTaskV1@0
+            displayName: "Sandbox Apply"
+            inputs:
+              provider: 'aws'
+              command: 'apply'
+              commandOptions: '-input=false tfplan/tfplan'
+              environmentServiceNameAWS: 'Centricity Sandbox Terraform service connection'
+
+- stage: Dev_Validate
+  jobs:
+  - job: TerraformInit
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - checkout: self
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: 0.12.3
+    - script: |
+        sed -i 's/TOKEN/$(TOKEN)/' main.tf
+        terraform init -backend-config=backend/dev
+    - task: TerraformTaskV1@0
+      displayName: "Terraform Plan"
+      inputs:
+        provider: 'aws'
+        command: 'plan'
+        commandOptions: '-var-file vars/terraform.dev.tfvars'
+        environmentServiceNameAWS: 'Centricity Dev Terraform service connection'
+
+- stage: Dev_Apply
+  jobs:
+  - deployment: DevApply
+    displayName: DevApply
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    environment: Dev
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformTaskV1@0
+            displayName: "Dev Apply"
+            inputs:
+              provider: 'aws'
+              command: 'apply'
+              commandOptions: '-var-file vars/terraform.dev.tfvars'
+              environmentServiceNameAWS: 'Centricity Dev Terraform service connection'
+
+- stage: iDev_Validate
+  jobs:
+  - job: TerraformInit
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - checkout: self
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: 0.12.3
+    - script: |
+        sed -i 's/TOKEN/$(TOKEN)/' main.tf
+        terraform init -backend-config=backend/idev
+    - task: TerraformTaskV1@0
+      displayName: "iDev Plan"
+      inputs:
+        provider: 'aws'
+        command: 'plan'
+        commandOptions: '-var-file vars/terraform.idev.tfvars'
+        environmentServiceNameAWS: 'Centricity Dev Terraform service connection'
+
+- stage: iDev_Apply
+  jobs:
+  - deployment: iDevApply
+    displayName: iDevApply
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    environment: iDev
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformTaskV1@0
+            displayName: "iDev Apply"
+            inputs:
+              provider: 'aws'
+              command: 'apply'
+              commandOptions: '-var-file vars/terraform.idev.tfvars'
+              environmentServiceNameAWS: 'Centricity Dev Terraform service connection'
+
+- stage: QA_Validate
+  jobs:
+  - job: TerraformInit
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - checkout: self
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: 0.12.3
+    - script: |
+        sed -i 's/TOKEN/$(TOKEN)/' main.tf
+        terraform init -backend-config=backend/idev
+    - task: TerraformTaskV1@0
+      displayName: "QA Plan"
+      inputs:
+        provider: 'aws'
+        command: 'plan'
+        commandOptions: '-var-file vars/terraform.qa.tfvars'
+        environmentServiceNameAWS: 'Centricity Dev Terraform service connection' 
+
+- stage: QA_Apply
+  jobs:
+  - deployment: QAApply
+    displayName: QA-Apply
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    environment: QA
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformTaskV1@0
+            displayName: "QA Apply"
+            inputs:
+              provider: 'aws'
+              command: 'apply'
+              commandOptions: '-var-file vars/terraform.qa.tfvars'
+              environmentServiceNameAWS: 'Centricity Dev Terraform service connection'
+
+- stage: UAT_Validate
+  jobs:
+  - job: TerraformInit
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - checkout: self
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: 0.12.3
+    - script: |
+        sed -i 's/TOKEN/$(TOKEN)/' main.tf
+        terraform init -backend-config=backend/uat
+    - task: TerraformTaskV1@0
+      displayName: "UAT Plan"
+      inputs:
+        provider: 'aws'
+        command: 'plan'
+        commandOptions: '-var-file vars/terraform.uat.tfvars'
+        environmentServiceNameAWS: 'Centricity Dev Terraform service connection'
+
+- stage: UAT_Apply
+  jobs:
+  - deployment: UATApply
+    displayName: UATApply
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    environment: UAT
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformTaskV1@0
+            displayName: UATApply
+            inputs:
+              provider: 'aws'
+              command: 'apply'
+              commandOptions: '-var-file vars/terraform.uat.tfvars'
+              environmentServiceNameAWS: 'Centricity Dev Terraform service connection'
